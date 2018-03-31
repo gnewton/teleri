@@ -5,8 +5,8 @@ import (
 	"io"
 	"log"
 	"os"
-	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -41,7 +41,12 @@ var dirNumLimit int64 = 20 * 1000
 
 var prefixes = []string{"/proc", "/sys", "/cdrom", "/lost+found", "/media", "/run", "/var"}
 
+var uids map[int]struct{}
+
 func main() {
+	uids = make(map[int]struct{}, 1)
+	setUid()
+
 	var wg sync.WaitGroup
 	c := make(chan *DirFiles, 100)
 	dirInfoChannel := make(chan *DirInfo, 100)
@@ -54,9 +59,9 @@ func main() {
 	go handleDirInfo(dirInfoChannel, &wg)
 	wg.Add(1)
 
-	recurseDirs("/home/newtong", c, dirInfoChannel, 0)
+	//recurseDirs("/home/newtong", c, dirInfoChannel, 0)
 	//recurseDirs("/home", c, dirInfoChannel, 0)
-	//recurseDirs("/", c, dirInfoChannel, 0)
+	recurseDirs("/", c, dirInfoChannel, 0)
 	log.Println("Closing c")
 	close(c)
 	log.Println("Closing dirInfoChannel")
@@ -74,7 +79,7 @@ func handleDirInfo(c chan *DirInfo, wg *sync.WaitGroup) {
 	for dirInfo := range c {
 		if dirInfo.numfiles > dirNumLimit || dirInfo.size > dirSizeLimit || tooOld(dirInfo.fileInfo.ModTime()) {
 			// persist
-			log.Println(dirInfo)
+			//log.Println(dirInfo)
 		}
 	}
 	log.Println("Done handleDirInfo")
@@ -119,11 +124,12 @@ func handler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 			}
 
 			filename := filo.dir + "/" + file.Name()
-			if ignore(filename) {
+
+			fi, err := os.Lstat(filename)
+			if ignore(filename, fi) {
 				continue
 			}
-			fileInfo, err := os.Lstat(filename)
-			switch mode := fileInfo.Mode(); {
+			switch mode := fi.Mode(); {
 			case mode.IsRegular():
 			default:
 				continue
@@ -136,30 +142,42 @@ func handler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 				continue
 			}
 
-			_, err = makeSha1(f, fileInfo.Size(), fileHeadSize)
+			var hash []byte
+			hash, err = makeSha1(f, fi.Size(), fileHeadSize)
 
 			if err != nil {
 				err = f.Close()
 				continue
 			}
-			//fmt.Printf("\n% x", h.Sum(nil))
 
 			err = f.Close()
 			if err != nil {
 				log.Println(err)
 			}
 			n++
+			handleFile(filename, fi, hash)
 		}
 	}
 	//log.Println("-- handler id=", id, n, bytes)
 	wg.Done()
 }
 
+func handleFile(filename string, fi os.FileInfo, hash []byte) {
+	_ = fi.Sys().(*syscall.Stat_t)
+	//log.Println("++++++++++++++++++++++++", int(stat.Uid))
+
+}
+
 func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, depth int) {
-	if ignore(dir) {
+
+	fileInfo, err := os.Lstat(dir)
+	if err != nil {
+		log.Println(err)
 		return
 	}
-	fileInfo, err := os.Lstat(dir)
+	if ignore(dir, fileInfo) {
+		return
+	}
 	if !fileInfo.IsDir() {
 		log.Println(errors.New(dir + " is not a directory"))
 	}
@@ -227,15 +245,4 @@ func chunkStrategy(c chan *DirFiles, dir string, files []os.FileInfo) {
 	filo.dir = dir
 	c <- filo
 	return
-}
-
-func ignore(f string) bool {
-	//var prefixes = []string{"/proc", "/dev", "/sys/devices", "/boot", "/cdrom", "/lost+found", "/media", "/run", "/var", "/bin"}
-
-	for i, _ := range prefixes {
-		if strings.HasPrefix(f, prefixes[i]) {
-			return true
-		}
-	}
-	return false
 }
