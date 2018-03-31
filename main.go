@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"log"
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 type DirFiles struct {
@@ -17,11 +19,27 @@ type DirInfo struct {
 	path     string
 	numfiles int64
 	size     int64
+	fileInfo os.FileInfo
 }
 
-const num = 5
-const dirSize = 40
-const fileHeadSize = 1024 * 64 * 1024
+var num = 5
+var dirSize = 40
+var fileHeadSize int64 = 1024 * 64 * 1024
+
+// 1GB
+var fileSizeLimit int64 = 1024 * 1024 * 1000
+var oldFileSizeLimit int64 = 1024 * 1024 * 500
+
+// 5GB
+var dirSizeLimit int64 = 1024 * 1024 * 10 * 1000
+
+// 4 months (120 days)
+var ageLimit time.Duration = time.Hour * 24 * 30 * 4
+
+// 20 thousand files
+var dirNumLimit int64 = 20 * 1000
+
+var prefixes = []string{"/proc", "/sys", "/cdrom", "/lost+found", "/media", "/run", "/var"}
 
 func main() {
 	var wg sync.WaitGroup
@@ -36,9 +54,9 @@ func main() {
 	go handleDirInfo(dirInfoChannel, &wg)
 	wg.Add(1)
 
-	//recurseDirs("/home/newtong", c, dirInfoChannel, 0)
+	recurseDirs("/home/newtong", c, dirInfoChannel, 0)
 	//recurseDirs("/home", c, dirInfoChannel, 0)
-	recurseDirs("/", c, dirInfoChannel, 0)
+	//recurseDirs("/", c, dirInfoChannel, 0)
 	log.Println("Closing c")
 	close(c)
 	log.Println("Closing dirInfoChannel")
@@ -53,8 +71,11 @@ func main() {
 var counter int64 = 0
 
 func handleDirInfo(c chan *DirInfo, wg *sync.WaitGroup) {
-	for _ = range c {
-
+	for dirInfo := range c {
+		if dirInfo.numfiles > dirNumLimit || dirInfo.size > dirSizeLimit || tooOld(dirInfo.fileInfo.ModTime()) {
+			// persist
+			log.Println(dirInfo)
+		}
 	}
 	log.Println("Done handleDirInfo")
 	wg.Done()
@@ -98,7 +119,7 @@ func handler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 			}
 
 			filename := filo.dir + "/" + file.Name()
-			if badFilePrefix(filename) {
+			if ignore(filename) {
 				continue
 			}
 			fileInfo, err := os.Lstat(filename)
@@ -135,16 +156,18 @@ func handler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 }
 
 func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, depth int) {
-	if badFilePrefix(dir) {
+	if ignore(dir) {
 		return
 	}
-	file, err := os.Open(dir)
-	if err != nil {
-		//log.Println(err)
-		return
+	fileInfo, err := os.Lstat(dir)
+	if !fileInfo.IsDir() {
+		log.Println(errors.New(dir + " is not a directory"))
 	}
 
-	//log.Println(file)
+	file, err := os.Open(dir)
+	if err != nil {
+		return
+	}
 
 	var files []os.FileInfo
 	var numDirFiles int64 = 0
@@ -160,7 +183,7 @@ func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, dep
 			}
 		}
 		chunkStrategy(c, dir, files)
-		//log.Println("Chan size=", len(c))
+
 		for i, _ := range files {
 			counter++
 			f := files[i]
@@ -184,6 +207,7 @@ func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, dep
 		path:     dir,
 		numfiles: numDirFiles,
 		size:     dirFileTotalSize,
+		fileInfo: fileInfo,
 	}
 
 	dirInfoChannel <- &dirInfo
@@ -198,42 +222,16 @@ func spaces(n int) string {
 }
 
 func chunkStrategy(c chan *DirFiles, dir string, files []os.FileInfo) {
-	if true {
-		filo := new(DirFiles)
-		filo.files = files
-		filo.dir = dir
-		c <- filo
-		return
-	}
-
-	// sort.Sort(BySize(files))
-
-	// smallFiles := make([]os.FileInfo, 0)
-	// for i, _ := range files {
-	// 	//log.Println("Chan size=", len(c))
-	// 	f := files[i]
-	// 	if f.Size() > 1000000000 {
-	// 		filo := DirFiles{
-	// 			dir:   dir,
-	// 			files: []os.FileInfo{f},
-	// 		}
-	// 		c <- &filo
-	// 		log.Println("$$$$$$$$$$$$$$$$$$$$$$$", f.Name(), f.Size()/1000/1000)
-	// 	} else {
-	// 		smallFiles = append(smallFiles, f)
-	// 	}
-	// }
-	// if len(smallFiles) > 0 {
-	// 	filo := new(DirFiles)
-	// 	filo.files = smallFiles
-	// 	filo.dir = dir
-	// 	c <- filo
-	// }
+	filo := new(DirFiles)
+	filo.files = files
+	filo.dir = dir
+	c <- filo
+	return
 }
 
-func badFilePrefix(f string) bool {
+func ignore(f string) bool {
 	//var prefixes = []string{"/proc", "/dev", "/sys/devices", "/boot", "/cdrom", "/lost+found", "/media", "/run", "/var", "/bin"}
-	var prefixes = []string{"/proc/", "/sys/", "/cdrom/", "/lost+found/", "/media/", "/run/", "/var/"}
+
 	for i, _ := range prefixes {
 		if strings.HasPrefix(f, prefixes[i]) {
 			return true
