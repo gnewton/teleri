@@ -1,11 +1,14 @@
 package main
 
 import (
+	"crypto/md5"
 	"crypto/sha1"
 	"errors"
 	"io"
 	"log"
 	"os"
+	"os/user"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -22,6 +25,32 @@ func makeSha1(f *os.File, fileSize int64, n int64) ([]byte, error) {
 		return b, nil
 	}
 	h := sha1.New()
+	if fileSize < n {
+		if _, err := io.Copy(h, f); err != nil {
+			log.Println(err)
+			return nil, err
+		}
+	} else {
+		if _, err := io.CopyN(h, f, n); err != nil {
+			log.Println(err)
+			return nil, err
+		}
+	}
+	return h.Sum(nil), nil
+
+}
+
+// Makes md5 of first n bytes
+func makeMd5(f *os.File, fileSize int64, n int64) ([]byte, error) {
+	if f == nil {
+		return nil, errors.New("File is nil")
+	}
+
+	if fileSize == 0 || n == 0 {
+		var b []byte
+		return b, nil
+	}
+	h := md5.New()
 	if fileSize < n {
 		if _, err := io.Copy(h, f); err != nil {
 			log.Println(err)
@@ -62,14 +91,30 @@ func ignore(f string, fi os.FileInfo) bool {
 		}
 	}
 
-	return !checkUid(fi)
+	//return !checkUid(fi)
+	return false
+}
+
+func getFileUid(fi os.FileInfo) uint32 {
+	return fi.Sys().(*syscall.Stat_t).Uid
+}
+
+func lookupUser(uid uint32) string {
+	uidString := strconv.Itoa(int(uid))
+	log.Println("[" + uidString + "]")
+	user, err := user.LookupId(uidString)
+	if err != nil {
+		log.Println(err)
+		return "---unknown---"
+	}
+	return user.Username
 }
 
 func checkUid(fi os.FileInfo) bool {
 	if len(uids) == 0 {
 		return false
 	}
-	fuid := fi.Sys().(*syscall.Stat_t).Uid
+	fuid := getFileUid(fi)
 
 	_, contains := uids[int(fuid)]
 	return contains

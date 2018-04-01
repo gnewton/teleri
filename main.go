@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 	"sync"
-	"syscall"
+
 	"time"
 )
 
@@ -22,22 +22,25 @@ type DirInfo struct {
 	fileInfo os.FileInfo
 }
 
-var num = 5
+var num = 3
 var dirSize = 40
 var fileHeadSize int64 = 1024 * 64 * 1024
 
 // 1GB
-var fileSizeLimit int64 = 1024 * 1024 * 1000
+//var fileSizeLimit int64 = 1024 * 1024 * 1000
+var fileSizeLimit int64 = 1024 * 1024 * 100
 var oldFileSizeLimit int64 = 1024 * 1024 * 500
 
-// 5GB
-var dirSizeLimit int64 = 1024 * 1024 * 10 * 1000
-
 // 4 months (120 days)
-var ageLimit time.Duration = time.Hour * 24 * 30 * 4
+var ageLimit time.Duration = time.Hour * 24 * 30 * 24 * 100
 
 // 20 thousand files
-var dirNumLimit int64 = 20 * 1000
+//var dirNumLimit int64 = 20 * 1000
+var dirNumLimit int64 = 2000
+
+// 5GB
+//var dirSizeLimit int64 = 1024 * 1024 * 10 * 1000
+var dirSizeLimit int64 = 1024 * 1024 * 10
 
 var prefixes = []string{"/proc", "/sys", "/cdrom", "/lost+found", "/media", "/run", "/var"}
 
@@ -54,12 +57,12 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	for i := 0; i < num; i++ {
 		wg.Add(1)
-		go handler(i, c, &wg)
+		go fileHandler(i, c, &wg)
 	}
 	go handleDirInfo(dirInfoChannel, &wg)
 	wg.Add(1)
 
-	//recurseDirs("/home/newtong", c, dirInfoChannel, 0)
+	//recurseDirs("/home/gnewton", c, dirInfoChannel, 0)
 	//recurseDirs("/home", c, dirInfoChannel, 0)
 	recurseDirs("/", c, dirInfoChannel, 0)
 	log.Println("Closing c")
@@ -77,9 +80,8 @@ var counter int64 = 0
 
 func handleDirInfo(c chan *DirInfo, wg *sync.WaitGroup) {
 	for dirInfo := range c {
-		if dirInfo.numfiles > dirNumLimit || dirInfo.size > dirSizeLimit || tooOld(dirInfo.fileInfo.ModTime()) {
-			// persist
-			//log.Println(dirInfo)
+		if dirInfoPersistFilter(dirInfo) {
+			persistDirInfo(dirInfo)
 		}
 	}
 	log.Println("Done handleDirInfo")
@@ -107,7 +109,7 @@ func handleDirInfo(c chan *DirInfo, wg *sync.WaitGroup) {
 // 	}
 // }
 
-func handler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
+func fileHandler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 	//log.Println("-- START handler id=", id)
 	n := 0
 	var bytes int64 = 0
@@ -142,34 +144,28 @@ func handler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 				continue
 			}
 
-			var hash []byte
-			hash, err = makeSha1(f, fi.Size(), fileHeadSize)
-
 			if err != nil {
 				err = f.Close()
 				continue
+			}
+
+			n++
+			if fileInfoPersistFilter(fi) {
+				persistFileInfo(f, filename, fi)
 			}
 
 			err = f.Close()
 			if err != nil {
 				log.Println(err)
 			}
-			n++
-			handleFile(filename, fi, hash)
 		}
 	}
 	//log.Println("-- handler id=", id, n, bytes)
 	wg.Done()
 }
 
-func handleFile(filename string, fi os.FileInfo, hash []byte) {
-	_ = fi.Sys().(*syscall.Stat_t)
-	//log.Println("++++++++++++++++++++++++", int(stat.Uid))
-
-}
-
 func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, depth int) {
-
+	//log.Println(dir)
 	fileInfo, err := os.Lstat(dir)
 	if err != nil {
 		log.Println(err)
