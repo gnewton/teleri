@@ -5,57 +5,29 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
 	"sync"
-
 	"time"
+
+	"github.com/gnewton/grater"
 )
-
-type DirFiles struct {
-	dir   string
-	files []os.FileInfo
-}
-
-type DirInfo struct {
-	path     string
-	numfiles int64
-	size     int64
-	fileInfo os.FileInfo
-}
-
-var num = 3
-var dirSize = 40
-var fileHeadSize int64 = 1024 * 64 * 1024
-
-// 1GB
-//var fileSizeLimit int64 = 1024 * 1024 * 1000
-var fileSizeLimit int64 = 1024 * 1024 * 100
-var oldFileSizeLimit int64 = 1024 * 1024 * 500
-
-// 4 months (120 days)
-var ageLimit time.Duration = time.Hour * 24 * 30 * 24 * 100
-
-// 20 thousand files
-//var dirNumLimit int64 = 20 * 1000
-var dirNumLimit int64 = 2000
-
-// 5GB
-//var dirSizeLimit int64 = 1024 * 1024 * 10 * 1000
-var dirSizeLimit int64 = 1024 * 1024 * 10
-
-var prefixes = []string{"/proc", "/sys", "/cdrom", "/lost+found", "/media", "/run", "/var"}
-
-var uids map[int]struct{}
 
 func main() {
 	uids = make(map[int]struct{}, 1)
 	setUid()
 
+	grater, err := grater.NewGrater(time.Second, &counter)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var wg sync.WaitGroup
+
 	c := make(chan *DirFiles, 100)
 	dirInfoChannel := make(chan *DirInfo, 100)
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	for i := 0; i < num; i++ {
+	for i := 0; i < numFileHandlers; i++ {
 		wg.Add(1)
 		go fileHandler(i, c, &wg)
 	}
@@ -74,9 +46,10 @@ func main() {
 	wg.Wait()
 	log.Println("Done waiting")
 	log.Println(counter)
+	grater.Stop()
 }
 
-var counter int64 = 0
+var counter uint64 = 0
 
 func handleDirInfo(c chan *DirInfo, wg *sync.WaitGroup) {
 	for dirInfo := range c {
@@ -87,27 +60,6 @@ func handleDirInfo(c chan *DirInfo, wg *sync.WaitGroup) {
 	log.Println("Done handleDirInfo")
 	wg.Done()
 }
-
-// func shaFile(file string)[]bytes{
-// 	f, err := os.Open(file)
-// 	if err != nil {
-// 		log.Println(err)
-// 		f.Close()
-// 		return nil
-// 	}
-
-// 	h := sha1.New()
-// 	if _, err := io.Copy(h, f); err != nil {
-// 		log.Println(err)
-// 	}
-
-// 	//fmt.Printf("% x", h.Sum(nil))
-// 	h.Sum(nil)
-// 	err = f.Close()
-// 	if err != nil {
-// 		log.Println(err)
-// 	}
-// }
 
 func fileHandler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 	//log.Println("-- START handler id=", id)
@@ -128,6 +80,10 @@ func fileHandler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 			filename := filo.dir + "/" + file.Name()
 
 			fi, err := os.Lstat(filename)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
 			if ignore(filename, fi) {
 				continue
 			}
@@ -139,7 +95,7 @@ func fileHandler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 
 			f, err := os.Open(filename)
 			if err != nil {
-				//log.Println(err)
+				log.Println(err)
 				f.Close()
 				continue
 			}
@@ -213,9 +169,6 @@ func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, dep
 			}
 		}
 	}
-	if numDirFiles > 1000 || dirFileTotalSize > 100000000 {
-		//log.Println(dir, numDirFiles, dirFileTotalSize/1000/1000, "M")
-	}
 
 	dirInfo := DirInfo{
 		path:     dir,
@@ -227,18 +180,19 @@ func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, dep
 	dirInfoChannel <- &dirInfo
 }
 
-func spaces(n int) string {
-	s := ""
-	for i := 0; i < n; i++ {
-		s += " "
-	}
-	return s
-}
-
 func chunkStrategy(c chan *DirFiles, dir string, files []os.FileInfo) {
 	filo := new(DirFiles)
 	filo.files = files
 	filo.dir = dir
 	c <- filo
 	return
+}
+
+func init() {
+	uidUserMap = make(map[uint32]string)
+	numCpus := runtime.NumCPU()
+	if numCpus/4 > numFileHandlers {
+		numFileHandlers = numCpus / 4
+	}
+
 }

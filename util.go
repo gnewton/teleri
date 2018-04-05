@@ -10,6 +10,7 @@ import (
 	"os/user"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -99,7 +100,16 @@ func getFileUid(fi os.FileInfo) uint32 {
 	return fi.Sys().(*syscall.Stat_t).Uid
 }
 
+var uidUserMap map[uint32]string
+var mutex = &sync.Mutex{}
+
 func lookupUser(uid uint32) string {
+
+	if username, ok := uidUserMap[uid]; ok {
+		return username
+	}
+	log.Println("MISS**********")
+
 	uidString := strconv.Itoa(int(uid))
 	log.Println("[" + uidString + "]")
 	user, err := user.LookupId(uidString)
@@ -107,6 +117,9 @@ func lookupUser(uid uint32) string {
 		log.Println(err)
 		return "---unknown---"
 	}
+	mutex.Lock()
+	uidUserMap[uid] = user.Username
+	mutex.Unlock()
 	return user.Username
 }
 
