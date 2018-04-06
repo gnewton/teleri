@@ -19,6 +19,12 @@ func init() {
 }
 
 func main() {
+	db, err := dbInit("foo.sql")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
 	uids = make(map[int]struct{}, 1)
 	setUid()
 
@@ -26,16 +32,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer grater.Stop()
 
 	var wg sync.WaitGroup
 
-	c := make(chan *DirFiles, 100)
+	dirFilesChannel := make(chan *DirFiles, 100)
 	dirInfoChannel := make(chan *DirInfo, 100)
+
+	filePersister := new(FilePersister)
+	filePersister.db = db
+	filePersister.init()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	for i := 0; i < numFileHandlers; i++ {
 		wg.Add(1)
-		go fileHandler(i, c, &wg)
+		go fileHandler(filePersister, i, dirFilesChannel, &wg)
 	}
 	go handleDirInfo(dirInfoChannel, &wg)
 	wg.Add(1)
@@ -43,18 +54,19 @@ func main() {
 	go handleDirInfo(dirInfoChannel, &wg)
 	wg.Add(1)
 
-	dirs := []string{"/home", "/usr"}
+	//dirs := []string{"/home", "/usr", }
+	dirs := []string{"/"}
 
 	for i := 0; i < len(dirs)-1; i++ {
 		log.Println(i, dirs[i])
-		go recurseDirs(dirs[i], c, dirInfoChannel, 0)
+		go recurseDirs(dirs[i], dirFilesChannel, dirInfoChannel, 0)
 	}
-	recurseDirs(dirs[len(dirs)-1], c, dirInfoChannel, 0)
+	recurseDirs(dirs[len(dirs)-1], dirFilesChannel, dirInfoChannel, 0)
 
 	//recurseDirs("/skyemci01-hpc/home/interpro-lookup-svc/data/match_db", c, dirInfoChannel, 0)
 
 	log.Println("Closing c")
-	close(c)
+	close(dirFilesChannel)
 	log.Println("Closing dirInfoChannel")
 	close(dirInfoChannel)
 
@@ -62,5 +74,6 @@ func main() {
 	wg.Wait()
 	log.Println("Done waiting")
 	log.Println(counter)
-	grater.Stop()
+
+	filePersister.close()
 }

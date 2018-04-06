@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-func fileHandler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
+func fileHandler(fp *FilePersister, id int, c chan *DirFiles, wg *sync.WaitGroup) {
 	//log.Println("-- START handler id=", id)
 	n := 0
 	var bytes int64 = 0
@@ -40,7 +40,7 @@ func fileHandler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 			n++
 			if fileInfoPersistFilter(fi) {
 				//persistFileInfo(f, filename, fi)
-				persistFileInfo(filename, fi)
+				persistFileInfo(fp, filename, fi)
 			}
 		}
 	}

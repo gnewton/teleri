@@ -25,7 +25,7 @@ var fileHeadSize int64 = 1024 * 64 * 1024
 
 // 1GB
 //var fileSizeLimit int64 = 1024 * 1024 * 1000
-var fileSizeLimit int64 = 1024 * 1024 * 100
+var fileSizeLimit int64 = 1024 * 1
 
 // 4 months (120 days)
 var ageLimit time.Duration = time.Hour * 24 * 30 * 12
@@ -43,4 +43,5 @@ var dirSizeLimit int64 = 1024 * 1024 * 10 * 1000
 
 var prefixes = []string{"/proc", "/sys", "/cdrom", "/lost+found", "/media", "/run", "/var"}
 
+// uids limit what files and dirs get persisted, not what dirs are to be crawled...**Not implemented**
 var uids map[int]struct{}
