@@ -17,6 +17,8 @@ type DirInfo struct {
 	fileInfo os.FileInfo
 }
 
+var counter uint64 = 0
+
 var numFileHandlers = 3
 var dirSize = 100
 var fileHeadSize int64 = 1024 * 64 * 1024
