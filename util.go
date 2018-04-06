@@ -104,10 +104,13 @@ var uidUserMap map[uint32]string
 var mutex = &sync.Mutex{}
 
 func lookupUser(uid uint32) string {
-
-	if username, ok := uidUserMap[uid]; ok {
+	mutex.Lock()
+	username, ok := uidUserMap[uid]
+	mutex.Unlock()
+	if ok {
 		return username
 	}
+
 	log.Println("MISS**********")
 
 	uidString := strconv.Itoa(int(uid))
@@ -115,12 +118,15 @@ func lookupUser(uid uint32) string {
 	user, err := user.LookupId(uidString)
 	if err != nil {
 		log.Println(err)
-		return "---unknown---"
+		username = "---unknown---"
+		//return "---unknown---"
+	} else {
+		username = user.Username
 	}
 	mutex.Lock()
-	uidUserMap[uid] = user.Username
+	uidUserMap[uid] = username
 	mutex.Unlock()
-	return user.Username
+	return username
 }
 
 func checkUid(fi os.FileInfo) bool {

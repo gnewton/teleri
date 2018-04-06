@@ -34,9 +34,15 @@ func main() {
 	go handleDirInfo(dirInfoChannel, &wg)
 	wg.Add(1)
 
+	go handleDirInfo(dirInfoChannel, &wg)
+	wg.Add(1)
+
 	//recurseDirs("/home/gnewton", c, dirInfoChannel, 0)
 	//recurseDirs("/home", c, dirInfoChannel, 0)
 	recurseDirs("/", c, dirInfoChannel, 0)
+
+	//recurseDirs("/skyemci01-hpc/home/interpro-lookup-svc/data/match_db", c, dirInfoChannel, 0)
+
 	log.Println("Closing c")
 	close(c)
 	log.Println("Closing dirInfoChannel")
@@ -78,7 +84,7 @@ func fileHandler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 			}
 
 			filename := filo.dir + "/" + file.Name()
-
+			//log.Println("filehansker:", filename)
 			fi, err := os.Lstat(filename)
 			if err != nil {
 				log.Println(err)
@@ -92,27 +98,10 @@ func fileHandler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 			default:
 				continue
 			}
-
-			f, err := os.Open(filename)
-			if err != nil {
-				log.Println(err)
-				f.Close()
-				continue
-			}
-
-			if err != nil {
-				err = f.Close()
-				continue
-			}
-
 			n++
 			if fileInfoPersistFilter(fi) {
-				persistFileInfo(f, filename, fi)
-			}
-
-			err = f.Close()
-			if err != nil {
-				log.Println(err)
+				//persistFileInfo(f, filename, fi)
+				persistFileInfo(filename, fi)
 			}
 		}
 	}
@@ -121,7 +110,7 @@ func fileHandler(id int, c chan *DirFiles, wg *sync.WaitGroup) {
 }
 
 func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, depth int) {
-	//log.Println(dir)
+
 	fileInfo, err := os.Lstat(dir)
 	if err != nil {
 		log.Println(err)
@@ -133,7 +122,7 @@ func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, dep
 	if !fileInfo.IsDir() {
 		log.Println(errors.New(dir + " is not a directory"))
 	}
-
+	//log.Println(dir)
 	file, err := os.Open(dir)
 	if err != nil {
 		return

@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-func persistFileInfo(f *os.File, filename string, fi os.FileInfo) error {
+func persistFileInfo(filename string, fi os.FileInfo) error {
 	//hash, err = makeMd5(f, fi.Size(), fileHeadSize)
 	//hash, err := makeSha1(f, fi.Size(), fileHeadSize)
 	// if err != nil {

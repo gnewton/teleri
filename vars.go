@@ -18,7 +18,7 @@ type DirInfo struct {
 }
 
 var numFileHandlers = 3
-var dirSize = 40
+var dirSize = 100
 var fileHeadSize int64 = 1024 * 64 * 1024
 
 // 1GB
@@ -30,7 +30,7 @@ var ageLimit time.Duration = time.Hour * 24 * 30 * 12
 var oldFileSizeLimit int64 = 1024 * 1024 * 500
 
 // 20 thousand files
-var dirNumLimit int64 = 20 * 1000
+var dirNumLimit int64 = 2 * 1000
 
 //var dirNumLimit int64 = 2000
 
