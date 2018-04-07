@@ -18,7 +18,7 @@ func handleDirInfo(c chan *DirInfo, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, depth int) {
+func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, depth int, ftc FileTimeCache) {
 	fileInfo, err := os.Lstat(dir)
 	if err != nil {
 		log.Println(err)
@@ -27,9 +27,17 @@ func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, dep
 	if ignore(dir, fileInfo) {
 		return
 	}
+
 	if !fileInfo.IsDir() {
 		log.Println(errors.New(dir + " is not a directory"))
+		return
 	}
+
+	tmp := fileInfo.ModTime()
+	if !ftc.HasChanged(dir, &tmp) {
+		return
+	}
+
 	//log.Println(dir)
 	file, err := os.Open(dir)
 	if err != nil {
@@ -56,9 +64,9 @@ func recurseDirs(dir string, c chan *DirFiles, dirInfoChannel chan *DirInfo, dep
 			f := files[i]
 			if f.IsDir() {
 				if dir == "/" {
-					recurseDirs(dir+f.Name(), c, dirInfoChannel, depth+1)
+					recurseDirs(dir+f.Name(), c, dirInfoChannel, depth+1, ftc)
 				} else {
-					recurseDirs(dir+"/"+f.Name(), c, dirInfoChannel, depth+1)
+					recurseDirs(dir+"/"+f.Name(), c, dirInfoChannel, depth+1, ftc)
 				}
 			} else {
 				numDirFiles++

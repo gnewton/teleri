@@ -28,7 +28,7 @@ func main() {
 	uids = make(map[int]struct{}, 1)
 	setUid()
 
-	grater, err := grater.NewGrater(time.Second, &counter)
+	grater, err := grater.NewGrater(10*time.Second, &counter)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -43,10 +43,15 @@ func main() {
 	filePersister.db = db
 	filePersister.init()
 
+	ftc, err := NewFileTimeCache("cache.bolt")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	for i := 0; i < numFileHandlers; i++ {
 		wg.Add(1)
-		go fileHandler(filePersister, i, dirFilesChannel, &wg)
+		go fileHandler(filePersister, i, dirFilesChannel, &wg, ftc)
 	}
 	go handleDirInfo(dirInfoChannel, &wg)
 	wg.Add(1)
@@ -59,9 +64,9 @@ func main() {
 
 	for i := 0; i < len(dirs)-1; i++ {
 		log.Println(i, dirs[i])
-		go recurseDirs(dirs[i], dirFilesChannel, dirInfoChannel, 0)
+		go recurseDirs(dirs[i], dirFilesChannel, dirInfoChannel, 0, ftc)
 	}
-	recurseDirs(dirs[len(dirs)-1], dirFilesChannel, dirInfoChannel, 0)
+	recurseDirs(dirs[len(dirs)-1], dirFilesChannel, dirInfoChannel, 0, ftc)
 
 	//recurseDirs("/skyemci01-hpc/home/interpro-lookup-svc/data/match_db", c, dirInfoChannel, 0)
 

@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-func fileHandler(fp *FilePersister, id int, c chan *DirFiles, wg *sync.WaitGroup) {
+func fileHandler(fp *FilePersister, id int, c chan *DirFiles, wg *sync.WaitGroup, ftc FileTimeCache) {
 	//log.Println("-- START handler id=", id)
 	n := 0
 	var bytes int64 = 0
@@ -37,6 +37,11 @@ func fileHandler(fp *FilePersister, id int, c chan *DirFiles, wg *sync.WaitGroup
 			default:
 				continue
 			}
+			tmp := fi.ModTime()
+			if !ftc.HasChanged(filename, &tmp) {
+				return
+			}
+
 			n++
 			if fileInfoPersistFilter(fi) {
 				//persistFileInfo(f, filename, fi)

@@ -82,9 +82,9 @@ func fileWriter(fp *FilePersister) {
 			tx.Create(files[i])
 		}
 
-		err := tx.Commit()
-		if err != nil {
-			log.Println(err)
+		errors := tx.Commit().GetErrors()
+		if len(errors) != 0 {
+			log.Println(errors)
 		}
 	}
 }
